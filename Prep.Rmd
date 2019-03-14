@@ -1,0 +1,190 @@
+---
+title: 'ML2: Exam Preparation'
+author: "Denis Baskan"
+date: "14 March 2019"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+---
+
+
+# Exercise: Tree Models:Ensemble Methods
+
+Bootstrap, Bagging and Random Forest are content of this exercise.
+
+## Load Packages
+If packages are not installed, then they will be installed.
+
+```{r warning = FALSE}
+required.packages =  c('rpart','rpart.plot','randomForest','MASS','ROCR')
+
+load.packages <- function(packages){
+  
+  for (pckg in packages){
+    if (!(pckg %in% installed.packages()[,"Package"])){
+      install.packages(pckg)
+    }
+    
+    library(pckg, character.only = TRUE)
+  }
+}
+
+load.packages(required.packages)
+
+```
+
+# Bootstrap example
+We create a vector and boot strap samples out of it. 
+
+```{r warning = FALSE}
+n<-100
+vec<-1:n
+number <- c()
+prop <- c()
+for(B in 1:1000){
+  bs.samp<-sample(vec,size=n,replace=T)
+  #bs.samp
+  #sort(bs.samp)
+  #table(bs.samp)
+  #table((table(bs.samp)))
+  #numer of unique values in the bootstrapped sample
+  #length(unique(bs.samp))
+  #number of the out of bag values
+  n.OOB<-n-sum(table((table(bs.samp))))
+  number <- c(number, n.OOB)
+  prop <- c(prop, n.OOB/B)
+}
+
+plot(cumsum(prop),type='l')
+```
+
+For n -> Inf, you will convert against a fix value for the proportion. The first 1000 iterations have the most impact.
+
+
+# Bagging a Regression Tree
+
+Copied from last exercise.
+
+## Fit a Regression tree using column medv as outcome variable
+```{r warning = FALSE}
+#Note: outcome variable should be continuous. Exercise follows Lab 8.3.2 in James et al.
+set.seed(1) #set a fix random generator to reproduce the same results next time
+train = sample(1:nrow(Boston), nrow(Boston)/2)   #split data randomly
+tree.boston = rpart(medv ~.,Boston,subset=train) # create a tree
+print(tree.boston) #only 3 variables were used
+rpart.plot(tree.boston)
+```
+
+## Prune the tree and compare models
+```{r warning = FALSE}
+prune.boston = prune(tree.boston,cp=0.016)
+prune.boston
+rpart.plot(prune.boston)
+
+#compare models by calculating MSE (Mean Squarred Error)
+pred.train<-predict(tree.boston,newdata=Boston[train,])
+mean((Boston$medv[train]-pred.train)^2)
+pred.train.prune<-predict(prune.boston,newdata=Boston[train,])
+mean((Boston$medv[train]-pred.train.prune)^2)
+
+```
+
+## Calculate the MSE for the test set 
+
+```{r warning = FALSE}
+pred.test<-predict(tree.boston,newdata=Boston[-train,])
+mean((Boston$medv[-train]-pred.test)^2)
+pred.test<-predict(prune.boston,newdata=Boston[-train,])
+mean((Boston$medv[-train]-pred.test)^2)
+```
+
+## One bagged (bootstrap) sample of the data
+
+```{r warning = FALSE}
+n <- 100
+m <- length(train)
+mat <- matrix(, nrow = m, ncol = 4*n) #fitted-values, oob, predictions
+msetr <- c()
+msete <- c()
+
+for(B in 1:n){
+  bag.samp<-sample(train,size=length(train),replace=T) #take sample out of training set
+  oob.samp<-train[-bag.samp]                           #out of bag values
+  tree.bag=rpart(medv~.,Boston,subset=bag.samp)        #create tree
+  pred.train<-predict(tree.bag,newdata=Boston[train,]) #make predictions for training set
+  mse.train<-mean((Boston$medv[train]-pred.train)^2)              #calculate MSE 
+  pred.test<-predict(tree.bag,newdata=Boston[-train,]) #now for test sest
+  mse.test <-mean((Boston$medv[-train]-pred.test)^2)              #MSE
+  mat[,(B-1)*3+1] <- bag.samp
+  mat[1:length(oob.samp),(B-1)*3+2] <- oob.samp
+  mat[,(B-1)*3+3] <- pred.train
+  mat[,(B-1)*3+4] <- pred.test
+  msetr <- c(msetr,mse.train)
+  msete <- c(msete,mse.test)
+  
+}
+cat("Train MSE: ",mean(msetr))
+cat("Test MSE: ",mean(msete))
+
+```
+
+Train MSE is a bit higher compared to the single tree, but the Test MSE is lower. So Taking the baggd tree would be recommendable.
+
+
+# Bagging with R
+```{r warning = FALSE}
+#mtry = 13: take all variables
+bag.boston13 = randomForest(medv~., data= Boston , subset = train ,mtry = 13, importance =TRUE) 
+bag.boston13
+pred.test<-predict(bag.boston13,newdata=Boston[-train,]) 
+mse.test <-mean((Boston$medv[-train]-pred.test)^2)             
+cat("Test MSE: ",mse.test)
+
+```
+
+The Test MSE is noticeably better than our bagged tree calculated by hand. That is because there have been done some optimizations internally.
+
+
+## Apply rule of thumb for number of explanatory variables
+
+```{r warning = FALSE}
+#mtry = 13: take all variables
+bag.boston = randomForest(medv~., data= Boston , subset = train ,mtry = floor(sqrt(ncol(Boston))), importance =TRUE) 
+bag.boston
+pred.test<-predict(bag.boston,newdata=Boston[-train,]) 
+mse.test <-mean((Boston$medv[-train]-pred.test)^2)             
+cat("Test MSE: ",mse.test)
+```
+
+Wow! Our MSE has become even lower now. 
+
+## Variable Importance
+
+It can happen that the most important variables are not included in the tree.
+
+```{r warning = FALSE}
+bag.boston13
+importance(bag.boston13)
+varImpPlot(bag.boston13)
+
+bag.boston
+importance(bag.boston)
+varImpPlot(bag.boston)
+
+tree.boston
+plot(tree.boston$variable.importance)
+
+
+```
+
+```{r warning = FALSE}
+```
+
+
+
+
+
+
+
+
